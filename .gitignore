@@ -357,3 +357,5 @@ MigrationBackup/
 *.orig
 
 PSUDA/cudalib
+
+.idea

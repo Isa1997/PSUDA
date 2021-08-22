@@ -1,11 +1,12 @@
 ﻿
 #include "cuda_runtime.h"
-#include "device_launch_parameters.h"
+//#include "device_launch_parameters.h"
 #include "cuda_runtime_api.h"
 #include "curand.h"
 #include "curand_kernel.h"
-
+#include <iostream>
 #include <limits>
+#include "../PSUDA/Test.h"
 
 # define DELLEXPORT extern "C" __declspec(dllexport)
 
@@ -18,9 +19,9 @@
 #define SIZEUINT (sizeof(unsigned))
 
 __device__
-float Fitness(float position)
+float Fitness(float x)
 {
-    return position * position + 1234.58;
+    return FitnessFunction(x);
 }
 
 __device__
@@ -33,7 +34,7 @@ __global__  void Init(float* positions,float* velocities, float* fitnesses, floa
 {
     curandState state;
     curand_init(Randomize(randomSeed, threadIdx.x), 0, 1, &state);
-    float position = curand_uniform(&state) * 40.f - 20.f;
+    float position = curand_uniform(&state) * 40.f - 20.f ;
     float velocity = curand_uniform(&state) * 2.f - 1.f;
     float currentValue = Fitness(position);
     float localBest = currentValue;
@@ -95,7 +96,6 @@ DELLEXPORT void RingPSO(unsigned iterations, unsigned swarmSize, float r1, float
 
     //Run kernel function
     Init<<<1, swarmSize >>> (positions, velocities, fitness, bestPositions, r1);
-    //unsigned swarmSize, float* fitnesses, float* bestPositions, float* bestGlobalValue, float* BestGlobalPosition)
 
     UpdateGlobalValues <<<1, 1 >>> (swarmSize, fitness, bestPositions, bestGlobalValue, bestGlobalPosition);
 
@@ -114,7 +114,5 @@ DELLEXPORT void RingPSO(unsigned iterations, unsigned swarmSize, float r1, float
     cudaFree(bestGlobalValue);
     cudaFree(positions);
     cudaFree(velocities);
-    cudaFree(fitness);
-
-
+    cudaFree(fitness); 
 }
