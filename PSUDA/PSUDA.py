@@ -4,24 +4,27 @@ import time
 from ctypes import *
 from matplotlib import pyplot as plt
 from random import random
+import copy
 
 def getFitnessFunction():
     dll = ctypes.windll.LoadLibrary("cudalib/SyncPSO.dll")
     dll.FitnessFunction.restype = ctypes.c_float
     func = dll.FitnessFunction
-    func.argtypes = [c_float]
+    func.argtypes = [POINTER(c_float), c_short]
     return func
 
 # ---- Start Globals ----
 SWARM_SIZE = 100
-MAX_ITER = 10000
+MAX_ITER = 1000
+DIMENSION = 3
+
 fitnessFunction = getFitnessFunction()
 #---- End Globals ----
 
 def getSyncPSO():
     dll = ctypes.windll.LoadLibrary("cudalib/SyncPSO.dll") 
     func = dll.SyncPSO
-    func.argtypes = [POINTER(c_uint), POINTER(c_uint), POINTER(c_float), POINTER(c_float), POINTER(c_float)]
+    func.argtypes = [c_uint, c_uint, c_float, c_float, POINTER(c_float), POINTER(c_float), c_short]
     return func
 
 def SyncPSO():
@@ -32,23 +35,24 @@ def SyncPSO():
     r1 = c_float(random())
     r2 = c_float(random())
 
-    #it = np.zeros(100).astype('float32')
-    #it_p = it.ctypes.data_as(POINTER(c_float))
+    solution = np.ones(DIMENSION).astype('float32')
+    solution_ptr = solution.ctypes.data_as(POINTER(c_float))
 
     start = time.time()
-    f(pointer(swarmSize), pointer(numIterations),pointer(r1),pointer(r2), pointer(max_out))
+    f(swarmSize, numIterations, r1, r2, pointer(max_out), solution_ptr, DIMENSION)
     end = time.time()
 
-    print("Number of iterations: ", numIterations.value)
-    print("Number of particles in swarm: ", swarmSize.value)
+    print("***** Sync PSO *****")
     print("SyncPSO solution found: ", max_out.value)
+    print('SyncPSO best position found {}'.format(solution))
     print("SyncPSO time: ", end-start)
+
     return end-start
 
 def getRingPSO():
     dll = ctypes.windll.LoadLibrary("cudalib/RingPSO.dll")
     func = dll.RingPSO
-    func.argtypes = [c_uint,c_uint,c_float, c_float, POINTER(c_float)]
+    func.argtypes = [c_uint, c_uint, c_float, c_float, POINTER(c_float), POINTER(c_float), c_short]
     return func
 
 def RingPSO():
@@ -59,44 +63,45 @@ def RingPSO():
     r1 = c_float(random())
     r2 = c_float(random())
 
-    it = np.zeros(100).astype('float32')
+    solution = np.ones(DIMENSION).astype('float32')
+    solution_ptr = solution.ctypes.data_as(POINTER(c_float))
 
     start = time.time()
-    f(numIterations, swarmSize, r1, r2, pointer(max_out))
+    f(numIterations, swarmSize, r1, r2, pointer(max_out), solution_ptr, c_short(DIMENSION))
     end = time.time()
 
-    print("Number of iterations: ", numIterations.value)
-    print("Number of particles in swarm: ", swarmSize.value)
+    print("***** Ring PSO *****")
     print("RingPSO solution found: ", max_out.value)
+    print('RingPSO best position found {}'.format(solution))
     print("RingPSO time: ", end-start)
+
     return end-start
 
 class Particle:
 
-    def __init__(self, w=0.75, c1=1, c2=2):
-        self.position = random() * 40.0 - 20.0
-        self.velocity = random() * 2.0 - 1.0
+    def __init__(self, w=0.75, c1=1, c2=2, dim = DIMENSION):
+        self.position = np.array([random() * 10.0 - 5.0 for i in range (0,dim)]).astype('float32')
+        self.velocity = np.array([random() * 1.0 - 0.5 for i in range (0,dim)]).astype('float32')
 
         self.bestPosition = self.position
-        self.currentValue = fitnessFunction(self.position)
+        self.currentValue = fitnessFunction(self.position.ctypes.data_as(POINTER(c_float)), c_short(len(self.position)))
         self.bestValue = self.currentValue
-
         self.w = w
-        self.c1 = c2
+        self.c1 = c1
         self.c2 = c2
 
     def updatePosition(self, globalBestPosition, globalBestValue):
 
         self.position += self.velocity
 
-        self.currentValue = fitnessFunction(self.position)
+        self.currentValue = fitnessFunction(self.position.ctypes.data_as(POINTER(c_float)), c_short(len(self.position)))
         if self.currentValue < self.bestValue:
             self.bestValue = self.currentValue
             self.bestPosition = self.position
 
             if self.currentValue < globalBestValue:
                 globalBestValue = self.currentValue
-                globalBestPosition = self.position
+                globalBestPosition = copy.copy(self.position)
 
         return globalBestPosition, globalBestValue
 
@@ -111,30 +116,36 @@ class Particle:
 def StandardPSO():
     start = time.time()
     swarm = [Particle() for _ in range(SWARM_SIZE)]
-    globalBestPosition = swarm[0].position
+    globalBestPosition = copy.copy(swarm[0].position)
     globalBestValue = swarm[0].currentValue
     for particle in swarm:
         if particle.currentValue < globalBestValue:
             globalBestValue = particle.currentValue
-            globalBestPosition = particle.position
-
+            globalBestPosition = copy.copy(particle.position)
     bests = []
     for i in range(MAX_ITER):
         for j in range(len(swarm)):
             swarm[j].updateVelocity(globalBestPosition)
-            globalBestPosition, globalBestValue = swarm[j].updatePosition(globalBestPosition, globalBestValue)
-
+            swarm[j].updatePosition(globalBestPosition, globalBestValue)
         bests.append(globalBestValue)
     end = time.time()
-    print('StandardPSO solution: {}, value: {}'.format(globalBestPosition, globalBestValue))
+
+    print("***** Standard PSO *****")
+    print('StandardPSO solution found {}'.format( globalBestValue))
+    print('StandardPSO best position found {}'.format( globalBestPosition))
     print("StandardPSO time: ", end-start)
+
     return end-start
 
 if __name__ == "__main__":
+    print("-------------------")
+    print("Number of iterations: ", MAX_ITER)
+    print("Number of particles in swarm: ", SWARM_SIZE)
+    print("Problem Dimension: ", DIMENSION)
+    print("-------------------")
     SyncPSO()
     RingPSO()
     StandardPSO()
-
     #timesSync = []
     #timesRing = []
    # timesStand = []
