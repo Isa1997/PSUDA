@@ -1,11 +1,10 @@
 ﻿
 #include "cuda_runtime.h"
-//#include "device_launch_parameters.h"
 #include "cuda_runtime_api.h"
 #include "curand.h"
 #include "curand_kernel.h"
-#include <iostream>
 #include <limits>
+#include <iostream>
 #include "../PSUDA/Test.h"
 
 # define DELLEXPORT extern "C" __declspec(dllexport)
@@ -30,86 +29,79 @@ int Randomize(float seed, int threadId)
     return static_cast<int>(seed * 100) + threadId;
 }
 
-__global__  void Init(float** positions,float** velocities, float* fitnesses, float** bestPositions, float randomSeed, const short dimension)
+__global__  void Init(float** positions,float** velocities, float* fitnesses, float** bestPositions, float* bestGlobalValue, const  float randomSeed, const short dimension)
 {
     // Position Init
+    int localId = threadIdx.x;
     float* position = (float*)malloc(SIZEFLOAT * dimension);
-
-    for (short i = 0; i < dimension; ++i)
-    {
-        curandState state;
-        curand_init(Randomize(randomSeed, threadIdx.x), 0, 1, &state);
-        position[i] = curand_uniform(&state) * 40.f - 20.f;
-    }
-
-    //Velocity Init
     float* velocity = (float*)malloc(SIZEFLOAT * dimension);
+
     for (short i = 0; i < dimension; ++i)
     {
         curandState state;
-        curand_init(Randomize(randomSeed, threadIdx.x), 0, 1, &state);
+        curand_init(Randomize(randomSeed, localId), 0, 1, &state);
+        position[i] = curand_uniform(&state) * 40.f - 20.f;
         velocity[i] = curand_uniform(&state) * 2.f - 1.f;
     }
 
-    float currentValue = Fitness(position,dimension);
-    float localBest = currentValue;
+    float localBest = Fitness(position, dimension);
     float* positionBest = position;
 
-    positions[threadIdx.x] = position;
-    velocities[threadIdx.x] = velocity;
-    fitnesses[threadIdx.x] = localBest;
+    positions[localId] = position;
+    velocities[localId] = velocity;
+    fitnesses[localId] = localBest;
 
-    float* row = (float*)((char*)bestPositions + threadIdx.x * sizeof(float) * dimension);
+    float* row = (float*)((char*)bestPositions + localId * sizeof(float) * dimension);
     for (short j = 0; j < dimension; ++j)
     {
         row[j] = positionBest[j];
     }
-    __syncthreads();
+
+    *bestGlobalValue = LONG_MAX;
 }
 
-__global__  void UpdateGlobalValues(unsigned swarmSize, const short dimension, float* fitnesses, float** bestPositions, float* bestGlobalValue, float* bestGlobalPosition)
+__global__  void UpdateGlobalValues(const unsigned swarmSize, const short dimension, float* fitnesses,float** bestPositions, float* bestGlobalValue, float* bestGlobalPosition)
 {
-    *bestGlobalValue = LONG_MAX;
+    int index = -1;
     for (int i = 0; i < swarmSize; ++i)
     {
         if (fitnesses[i] < *bestGlobalValue)
         {
-            *bestGlobalValue = fitnesses[i];
-            float* row = (float*)((char*)bestPositions + i * sizeof(float) * dimension);
-            for (short j = 0; j < dimension; ++j)
-            {
-                bestGlobalPosition[j] = row[j];
-            }
-            
+            index = i;
         }
     }
-    __syncthreads();
-}
 
-__global__  void UpdatePositionAndVelocity(float** positions, float** velocities, float* fitnesses, float** bestPositions, float* bestGlobalPosition, float r1, float r2, const short dimension)
-{
-
-    float* velocityToUpdate = velocities[threadIdx.x];
-    float* row = (float*)((char*)bestPositions + threadIdx.x * sizeof(float) * dimension);
-    for (int i = 0; i < dimension; ++i)
+    if (index != -1)
     {
-        velocityToUpdate[i] = W* velocityToUpdate[i] + C1 * r1 * (row[i] - positions[threadIdx.x][i])
-            + C2 * r2 * (*bestGlobalPosition - positions[threadIdx.x][i]);
-    }
-    for (int i = 0; i < dimension; ++i)
-    {
-        positions[threadIdx.x][i] += velocities[threadIdx.x][i];
-    }
-
-    float currentFitness = Fitness(positions[threadIdx.x], dimension);
-    if ( currentFitness < fitnesses[threadIdx.x])
-    {
-        fitnesses[threadIdx.x] = currentFitness;
- 
-        float* row = (float*)((char*)bestPositions + threadIdx.x * sizeof(float) * dimension);
+        *bestGlobalValue = fitnesses[index];
+        float* row = (float*)((char*)bestPositions + index * sizeof(float) * dimension);
         for (short j = 0; j < dimension; ++j)
         {
-            row[j] = positions[threadIdx.x][j];
+            bestGlobalPosition[j] = row[j];
+        }
+    }
+}
+
+__global__  void UpdatePositionAndVelocity(float** positions, float** velocities, float* fitnesses, float** bestPositions, float* bestGlobalPosition,const  float r1,const  float r2, const short dimension)
+{
+    int localId = threadIdx.x +  blockIdx.x * blockDim.x;
+    float* velocityToUpdate = velocities[localId];
+    float* row = (float*)((char*)bestPositions + localId * sizeof(float) * dimension);
+    for (int i = 0; i < dimension; ++i)
+    {
+        velocityToUpdate[i] = W* velocityToUpdate[i] + C1 * r1 * (row[i] - positions[localId][i])
+            + C2 * r2 * (*bestGlobalPosition - positions[localId][i]);
+        positions[localId][i] += velocityToUpdate[i];
+    }
+ 
+    float currentFitness = Fitness(positions[localId], dimension);
+    if ( currentFitness < fitnesses[localId])
+    {
+        fitnesses[localId] = currentFitness;
+ 
+        for (short j = 0; j < dimension; ++j)
+        {
+            row[j] = positions[localId][j];
         }
     }
     __syncthreads();
@@ -146,14 +138,15 @@ DELLEXPORT void RingPSO(unsigned iterations, unsigned swarmSize, float r1, float
     cudaMalloc((void**)&fitness, SIZEFLOAT * swarmSize);
     cudaMalloc((void**)&velocities, sizeof(float*) * swarmSize);
 
+    unsigned threadBlocks = swarmSize / 2;
     //Run kernel function
-    Init<<<1, swarmSize >>> (positions, velocities, fitness, bestPositions, r1, dimension);
+    Init<<<1, swarmSize >>> (positions, velocities, fitness, bestPositions,bestGlobalValue, r1, dimension);
 
     UpdateGlobalValues <<<1, 1 >>> (swarmSize, dimension, fitness, bestPositions, bestGlobalValue, bestGlobalPosition);
 
     for (int i = 0; i < iterations; ++i)
     {
-        UpdatePositionAndVelocity <<<1,swarmSize >>> (positions, velocities, fitness, bestPositions, bestGlobalPosition, r1, r2, dimension);
+        UpdatePositionAndVelocity <<<threadBlocks,2>>> (positions, velocities, fitness, bestPositions, bestGlobalPosition, r1, r2, dimension);
         UpdateGlobalValues<<<1,1>>> (swarmSize, dimension, fitness, bestPositions, bestGlobalValue, bestGlobalPosition);
     }
 

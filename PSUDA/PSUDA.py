@@ -15,8 +15,8 @@ def getFitnessFunction():
 
 # ---- Start Globals ----
 SWARM_SIZE = 100
-MAX_ITER = 1000
-DIMENSION = 3
+MAX_ITER = 10000
+DIMENSION = 1
 
 fitnessFunction = getFitnessFunction()
 #---- End Globals ----
@@ -113,9 +113,9 @@ class Particle:
             self.velocity = self.w * self.velocity + cognitive_velocity + social_velocity
 
 
-def StandardPSO():
+def StandardPSO(dim = 1):
     start = time.time()
-    swarm = [Particle() for _ in range(SWARM_SIZE)]
+    swarm = [Particle(dim=dim) for _ in range(SWARM_SIZE)]
     globalBestPosition = copy.copy(swarm[0].position)
     globalBestValue = swarm[0].currentValue
     for particle in swarm:
@@ -143,20 +143,25 @@ if __name__ == "__main__":
     print("Number of particles in swarm: ", SWARM_SIZE)
     print("Problem Dimension: ", DIMENSION)
     print("-------------------")
-    SyncPSO()
-    RingPSO()
-    StandardPSO()
-    #timesSync = []
-    #timesRing = []
-   # timesStand = []
-    #MAX_ITER = 100
-    #for i in range(1, 1000,1):
-     #   SWARM_SIZE = i
-      #  timesSync.append(SyncPSO())
-       # timesRing.append(RingPSO())
-        #timesStand.append(StandardPSO())
 
-    #plt.plot(range(1,100,1), timesStand, color="red")
-    #plt.plot(range(1,100,1), timesSync, color="blue")
-    #plt.plot(range(1,100,1), timesRing, color="green")
-    #plt.show()
+    r = range(1, 800, 100)
+    timesSync = []
+    timesRing = []
+    timesStand = []
+    MAX_ITER = 10000
+    DIMENSION = 3
+    for i in r:
+        SWARM_SIZE = i
+        print(i)
+        timesSync.append(SyncPSO())
+        timesRing.append(RingPSO())
+        timesStand.append(StandardPSO())
+
+    plt.plot(r, timesStand, color="red", label='Standard PSO')
+    plt.plot(r, timesSync, color="blue", label='Sync PSO')
+    plt.plot(r, timesRing, color="green", label='Ring PSO')
+    plt.xlabel("Swar Size")
+    plt.ylabel("Time in s")
+    plt.legend()
+    plt.show()
+
