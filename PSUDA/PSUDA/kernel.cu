@@ -12,9 +12,9 @@
 
 #define DELLEXPORT extern "C" __declspec(dllexport)
 
-#define W (0.75f)
-#define C1 (1.f)
-#define C2 (2.f)
+#define W (0.7298f)
+#define C1 (1.49f)
+#define C2 (1.49f)
 
 #define SIZEFLOAT (sizeof(float))
 #define SIZEINT (sizeof(int))
@@ -49,15 +49,23 @@ __global__  void kernel(unsigned iterations, unsigned swarmSize, float** bestPos
     for (short i = 0; i < dimension; ++i)
     {
         curandState state;
-        curand_init(Randomize(r1, threadIdx.x), 0, 1, &state);
+        curand_init(Randomize(r1 * (r1 + i), threadIdx.x), 0, 1, &state);
         position[i] = curand_uniform(&state) * 40.f - 20.f;
+        if (position[i] < boundLeft)
+        {
+            position[i] = boundLeft;
+        }
+        else if(position[i] > boundRight)
+        {
+            position[i] = boundRight;
+        }
     }
 
     float* velocity = (float*)malloc(SIZEFLOAT * dimension);
     for (short i = 0; i < dimension; ++i)
     {
         curandState state;
-        curand_init(Randomize(r1, threadIdx.x), 0, 1, &state);
+        curand_init(Randomize(r1*(r1+i), threadIdx.x), 0, 1, &state);
         velocity[i] = curand_uniform(&state) * 2.f - 1.f;
     }
 
@@ -99,6 +107,14 @@ __global__  void kernel(unsigned iterations, unsigned swarmSize, float** bestPos
         {
             velocity[j] = W * velocity[j] + C1 * r1 * (positionBest[j] - position[j]) + C2 * r2 * (s_bestGlobalPosition[j] - position[j]);
             position[j] = position[j] + velocity[j];
+            if (position[j] < boundLeft)
+            {
+                position[j] = boundLeft;
+            }
+            else if (position[j] > boundRight)
+            {
+                position[j] = boundRight;
+            }
         }
 
         //uptate swarm best position based on fitness
@@ -119,12 +135,13 @@ __global__  void kernel(unsigned iterations, unsigned swarmSize, float** bestPos
         //update global max by first thread
         if (threadIdx.x == 0)
         {
-            for (int i = 0; i < swarmSize; i++)
+            for (int k = 0; k < swarmSize; k++)
             {
-                if (s_fitnesses[i] < s_maxGlobalFitness)
+                if (s_fitnesses[k] < s_maxGlobalFitness)
                 {
-                    s_maxGlobalFitness = s_fitnesses[i];
-                    float* row = (float*)((char*)bestPositions + i * sizeof(float) * dimension);
+
+                    s_maxGlobalFitness = s_fitnesses[k];
+                    float* row = (float*)((char*)bestPositions + k * sizeof(float) * dimension);
                     for (short j = 0; j < dimension; ++j)
                     {
                         s_bestGlobalPosition[j] = row[j];
@@ -132,6 +149,7 @@ __global__  void kernel(unsigned iterations, unsigned swarmSize, float** bestPos
                 }
             }
         }
+
         __syncthreads();
     }
 

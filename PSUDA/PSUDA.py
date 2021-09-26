@@ -79,7 +79,7 @@ def RingPSO():
 
 class Particle:
 
-    def __init__(self, w=0.75, c1=1, c2=2, dim = DIMENSION):
+    def __init__(self, w=0.7298, c1=1.49, c2=1.49, dim = DIMENSION):
         self.position = np.array([random() * 10.0 - 5.0 for i in range (0,dim)]).astype('float32')
         self.velocity = np.array([random() * 1.0 - 0.5 for i in range (0,dim)]).astype('float32')
 
@@ -142,8 +142,19 @@ if __name__ == "__main__":
     print("Number of iterations: ", MAX_ITER)
     print("Number of particles in swarm: ", SWARM_SIZE)
     print("Problem Dimension: ", DIMENSION)
+    print("f(x,y) = -std::fabs(std::sin(x)*std::cos(y)*std::exp(std::fabs(1-(std::sqrt(x*x + y*y)/3.1415))))")
     print("-------------------")
+    DIMENSION = 2
+    MAX_ITER = 10000
+    SWARM_SIZE = 500
+    SyncPSO()
+    RingPSO()
+    StandardPSO(dim=2)
+    SyncPSO()
+    RingPSO()
+    StandardPSO(dim=2)
 
+    '''
     r = range(1, 800, 100)
     timesSync = []
     timesRing = []
@@ -163,5 +174,5 @@ if __name__ == "__main__":
     plt.xlabel("Swar Size")
     plt.ylabel("Time in s")
     plt.legend()
-    plt.show()
+    plt.show()'''
 

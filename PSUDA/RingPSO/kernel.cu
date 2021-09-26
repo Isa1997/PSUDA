@@ -9,9 +9,9 @@
 
 # define DELLEXPORT extern "C" __declspec(dllexport)
 
-#define W (0.75f)
-#define C1 (1.f)
-#define C2 (2.f)
+#define W (0.7298f)
+#define C1 (1.49f)
+#define C2 (1.49f)
 
 #define SIZEFLOAT (sizeof(float))
 #define SIZEINT (sizeof(int))
@@ -39,9 +39,17 @@ __global__  void Init(float** positions,float** velocities, float* fitnesses, fl
     for (short i = 0; i < dimension; ++i)
     {
         curandState state;
-        curand_init(Randomize(randomSeed, localId), 0, 1, &state);
+        curand_init(Randomize(randomSeed * (randomSeed + i), threadIdx.x), 0, 1, &state);
         position[i] = curand_uniform(&state) * 40.f - 20.f;
         velocity[i] = curand_uniform(&state) * 2.f - 1.f;
+        if (position[i] < boundLeft)
+        {
+            position[i] = boundLeft;
+        }
+        else if (position[i] > boundRight)
+        {
+            position[i] = boundRight;
+        }
     }
 
     float localBest = Fitness(position, dimension);
@@ -92,6 +100,14 @@ __global__  void UpdatePositionAndVelocity(float** positions, float** velocities
         velocityToUpdate[i] = W* velocityToUpdate[i] + C1 * r1 * (row[i] - positions[localId][i])
             + C2 * r2 * (*bestGlobalPosition - positions[localId][i]);
         positions[localId][i] += velocityToUpdate[i];
+        if (positions[localId][i] < boundLeft)
+        {
+            positions[localId][i] = boundLeft;
+        }
+        else if (positions[localId][i] > boundRight)
+        {
+            positions[localId][i] = boundRight;
+        }
     }
  
     float currentFitness = Fitness(positions[localId], dimension);
